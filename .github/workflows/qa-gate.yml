@@ -1,0 +1,46 @@
+name: QA gate
+
+# Turns the latest "## QA review" comment on a PR by someone with write access into the
+# `qa-verdict` commit status of its head (scripts/qa_gate.py). The branch ruleset requires that
+# status, so a PR merges only when QA approved the exact commit being merged: a new push turns it
+# back to `pending`. Ported from hellolitebox/litebox-inbox-jev (ADRs 0054–0056).
+#
+# A PR can't replace the gate: `pull_request_target` and `issue_comment` both run the default
+# branch's copy of this workflow and of scripts/qa_gate.py, never the PR's. No other workflow in
+# the repo may grant `statuses: write` or post a `qa-verdict` status (the QA reviewer checks this).
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  statuses: write
+
+concurrency:
+  group: qa-gate-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # Only the commit status is called `qa-verdict`; this job passes whenever it posted a status
+    # (pending and failure included) and fails only when the gate couldn't run.
+    name: QA gate
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The default branch only, never the PR's code: this run has a write token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          sparse-checkout: scripts/qa_gate.py
+          sparse-checkout-cone-mode: false
+      - run: python3 scripts/qa_gate.py --repo "$GITHUB_REPOSITORY" --pr "$PR"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}

@@ -1,0 +1,30 @@
+name: Check
+
+# Runs scripts/check.sh, the same command Litework and its QA reviewer run locally, so green there
+# means green here. The production build is gated by the Vercel preview deployment check (it has
+# the env vars), so this job runs with --no-build. Make both "check" and the Vercel check required
+# in the branch ruleset.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@v4
+        with:
+          # Keep in sync with .nvmrc / engines / Vercel's Node version.
+          node-version-file: ${{ hashFiles('.nvmrc') != '' && '.nvmrc' || 'package.json' }}
+      - run: corepack enable
+      - run: scripts/check.sh --no-build
